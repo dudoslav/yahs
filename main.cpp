@@ -1,9 +1,12 @@
 #include <iostream>
 #include <sstream>
+#include <string_view>
+#include <regex>
 #include <stdexcept>
 #include <future>
 #include <functional>
-#include <unordered_map>
+#include <algorithm>
+#include <vector>
 
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -142,10 +145,13 @@ class SocketAddressIPv4 {
   }
 
   socklen_t size() const { return sizeof(saddr); }
-  operator struct sockaddr*() { return reinterpret_cast<struct sockaddr*>(&saddr); }
-  operator const struct sockaddr*() const { return reinterpret_cast<const struct sockaddr*>(&saddr); }
+  operator struct sockaddr*()
+    { return reinterpret_cast<struct sockaddr*>(&saddr); }
+  operator const struct sockaddr*() const
+    { return reinterpret_cast<const struct sockaddr*>(&saddr); }
 
-  static SocketAddressIPv4 any(short port) { return {INADDR_ANY, port}; };
+  static SocketAddressIPv4 any(short port)
+    { return {INADDR_ANY, port}; };
 };
 
 template<typename Addr, typename Fun>
@@ -190,93 +196,95 @@ auto make_tcp_server(short port, Fun&& fun) {
 
 namespace http {
 
-enum class Version { V11 };
-enum class Method { GET, POST };
+enum class Version { V11 }; // TODO: Fill
+enum class Method { GET, POST }; // TODO: Fill
 
 struct Request {
-  Version version;
-  Method method;
-  std::string path;
-  std::unordered_map<std::string, std::string> headers;
+  const std::string data;
 
-  class Builder;
-};
+  Method _method;
+  std::string_view _path;
+  Version _version;
+  std::unordered_map<std::string_view, std::string_view> _headers;
 
-class Request::Builder {
-  Request request;
+  Method parse_method(const std::string_view& method_view) {
+    if (method_view == "GET") return _method = Method::GET;
 
-  Method parse_method(const std::string& s) {
-    if (s == "GET") return request.method = Method::GET;
-    if (s == "POST") return request.method = Method::POST;
-    throw std::invalid_argument{"Cannot parse method: " + s};
+    throw std::invalid_argument{std::string{"Unknown method: "}
+      .append(method_view.begin(), method_view.end())};
   }
 
-  Version parse_version(const std::string& s) {
-    if (s == "HTTP/1.1") return request.version = Version::V11;
-    throw std::invalid_argument{"Cannot parse version: " + s};
+  Version parse_version(const std::string_view& version_view) {
+    if (version_view == "HTTP/1.1") return _version = Version::V11;
+
+    throw std::invalid_argument{std::string{"Unknown version: "}
+      .append(version_view.begin(), version_view.end())};
+  }
+
+  void parse() {
+    auto pos = data.find_first_of(' ');
+    parse_method({data.c_str(), pos});
+
+    auto spos = data.find_first_of(' ', pos + 1);
+    _path = {&data[pos + 1], spos - pos - 1};
+
+    pos = spos;
+    spos = data.find_first_of('\n', pos);
+    parse_version({&data[pos + 1], spos - pos - 2});
+
+    //TODO: Parse headers
   }
 
   public:
 
-  Builder& request_line(const std::string& line) {
-    auto iss = std::istringstream{line};
-    std::string word;
+  Request(std::string&& data): data(data) { parse(); }
 
-    iss >> word;
-    parse_method(word);
-
-    iss >> request.path;
-
-    iss >> word;
-    parse_version(word);
-
-    return *this;
-  }
-
-  Builder& header_line(const std::string& line) {
-    auto iss = std::istringstream{line};
-    return *this;
-  }
-
-  Request build() {
-    return request;
-  }
+  Method method() const { return _method; }
+  Version version() const { return _version; }
+  const std::string_view& path() const { return _path; }
 };
 
 template<typename T>
-using Matcher = std::tuple<Method, std::string, T>;
-
-template<typename... Args>
-void on_connect(Args... args, net::Connection&& client) {
-  auto req_builder = Request::Builder{};
-  auto line = std::string{};
-  net::getline(client, line);
-  req_builder.request_line(line);
-  auto req = req_builder.build();
-
-  client << "HTTP/1.1 200 OK\n\nHelloWorld\n";
-}
+using Matcher = std::tuple<Method, std::regex, T>;
 
 template<typename... Args>
 auto make_server(short port, Args&&... args) {
-  auto matchers = std::unordered_map<std::string, std::function<std::string()>>{};
-  ((matchers[std::get<1>(args)] = std::get<2>(args)) , ...);
+  auto matchers = std::vector<Matcher<std::function<std::string()>>>{};
+  ((matchers.emplace_back(args)) , ...);
 
   return net::make_tcp_server(port, [matchers = std::move(matchers)](auto&& client){
-      client << matchers.find("/")->second();
+      auto req_data = std::string{};
+      while (net::getline(client, req_data))
+        req_data.push_back('\n');
+
+      auto req = Request{std::move(req_data)};
+      auto search = std::find_if(matchers.begin(), matchers.end(), [&req](const auto& matcher){
+          return std::get<0>(matcher) == req.method() &&
+            std::regex_match(req.path().begin(), req.path().end(), std::get<1>(matcher));
+          });
+      if (search == matchers.end()) {
+        client << "HTTP/1.1 404 Not Found\n";
+      } else {
+        client << "HTTP/1.1 200 OK\n\n" << std::get<2>(*search)();
+      }
       });
 }
 
 template<typename Fun>
+auto make_matcher(Method method, const std::string& path, Fun&& fun) {
+  return Matcher<Fun>{method, path, std::forward<Fun>(fun)};
+}
+
+template<typename Fun>
 auto get(const std::string& path, Fun&& fun) {
-  return Matcher<Fun>{Method::GET, path, std::forward<Fun>(fun)};
+  return make_matcher(Method::GET, path, std::forward<Fun>(fun));
 }
 
 } // namespace http
 
 int main() {
   auto index = http::get("/", [](){
-        return "HTTP/1.1 200 OK\n\nHelloWorld\n";
+        return "HelloWorld\n";
       });
 
   auto server = http::make_server(8080, index);
