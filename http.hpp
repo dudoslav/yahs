@@ -4,9 +4,7 @@
 #include <string_view>
 #include <regex>
 #include <stdexcept>
-#include <functional>
 #include <algorithm>
-#include <vector>
 
 #include "net.hpp"
 
@@ -15,7 +13,25 @@ namespace http {
 enum class Version { V11 }; // TODO: Fill
 enum class Method { GET, POST }; // TODO: Fill
 
-struct Request {
+static constexpr std::string_view STATUS_200 = "200 OK";
+static constexpr std::string_view STATUS_404 = "404 Not Found";
+
+static constexpr std::string_view HEADER_CONTENT_LENGTH = "Content-Length";
+
+std::string_view to_string(Method method) {
+  switch (method) {
+    case Method::GET: return "GET";
+    case Method::POST: return "GET";
+  }
+}
+
+std::string_view to_string(Version version) {
+  switch (version) {
+    case Version::V11: return "HTTP/1.1";
+  }
+}
+
+class Request {
   const std::string data;
 
   Method _method;
@@ -25,6 +41,7 @@ struct Request {
 
   Method parse_method(const std::string_view& method_view) {
     if (method_view == "GET") return _method = Method::GET;
+    if (method_view == "POST") return _method = Method::POST;
 
     throw std::invalid_argument{std::string{"Unknown method: "}
       .append(method_view.begin(), method_view.end())};
@@ -38,6 +55,7 @@ struct Request {
   }
 
   void parse() {
+    // This section is a mess and should be rewritten
     auto pos = data.find_first_of(' ');
     parse_method({data.c_str(), pos});
 
@@ -48,7 +66,15 @@ struct Request {
     spos = data.find_first_of('\n', pos);
     parse_version({&data[pos + 1], spos - pos - 2});
 
-    //TODO: Parse headers
+    auto tpos = spos;
+    for (;;) {
+      pos = tpos + 1;
+      spos = data.find_first_of(':', pos);
+      if (spos == data.npos) return;
+      tpos = data.find_first_of('\n', spos + 1);
+      _headers.emplace(std::string_view{&data[pos], spos - pos},
+          std::string_view{&data[spos + 2], tpos - spos - 3});
+    }
   }
 
   public:
@@ -58,7 +84,39 @@ struct Request {
   Method method() const { return _method; }
   Version version() const { return _version; }
   const std::string_view& path() const { return _path; }
+  const auto& headers() const { return _headers; }
 };
+
+class Response {
+  Version _version = Version::V11;
+  std::string_view _status = STATUS_404;
+  std::unordered_map<std::string, std::string> _headers;
+
+  std::string _body;
+
+  public:
+
+  Version version() const { return _version; }
+  const std::string_view& status() const { return _status; }
+  const std::string& body() const { return _body; }
+  const auto& headers() const { return _headers; }
+
+  template<typename T>
+  void ok(T&& body) {
+    _status = STATUS_200;
+    _headers.emplace(HEADER_CONTENT_LENGTH, std::to_string(std::size(body)));
+    _body = std::forward<T>(body);
+  }
+};
+
+net::Connection& operator<<(net::Connection& conn, const Response& res) {
+  conn << to_string(res.version()) << ' ' << res.status() << '\n';
+  for (const auto& h: res.headers())
+    conn << h.first << ": " << h.second << '\n';
+  conn << '\n';
+  conn << res.body() << '\n';
+  return conn;
+}
 
 template<typename T>
 using Matcher = std::tuple<Method, std::regex, T>;
@@ -74,19 +132,22 @@ class Server {
   template<typename Matcher>
   bool match(const std::string_view& path,
       const Matcher& matcher,
-      net::Connection& conn,
-      const Request& req) {
+      const Request& req,
+      Response& res) {
+    if (std::get<0>(matcher) != req.method())
+      return false;
+
     if (std::regex_match(std::begin(path), std::end(path), std::get<1>(matcher))) {
-      // TODO: Match method
-      std::get<2>(matcher)(conn, req);
+      std::get<2>(matcher)(req, res);
       return true;
     }
+
     return false;
   }
 
-  bool match(net::Connection& conn, const Request& req) {
+  bool match(const Request& req, Response& res) {
     return [&]<std::size_t... p>(std::index_sequence<p...>){
-      return (match(req.path(), std::get<p>(_matchers), conn, req) || ...);
+      return (match(req.path(), std::get<p>(_matchers), req, res) || ...);
     }(std::make_index_sequence<std::tuple_size<MatchersType>::value>{});
   }
 
@@ -96,8 +157,9 @@ class Server {
       req_data.push_back('\n');
 
     auto req = Request{std::move(req_data)};
-    if (!match(conn, req))
-      conn << "HTTP/1.1 404 Not Found\n\n";
+    auto res = Response{};
+    match(req, res);
+    conn << res;
   }
 
   Server(short port, MatchersType matchers):

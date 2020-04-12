@@ -1,6 +1,8 @@
 #pragma once
 
 #include <stdexcept>
+#include <string>
+#include <string_view>
 #include <thread>
 
 #include <sys/ioctl.h>
@@ -107,6 +109,20 @@ class Connection {
 
   Connection& operator<<(const std::string& s) {
     write(s.c_str(), s.size());
+    return *this;
+  }
+
+  Connection& operator<<(const std::string_view& sw) {
+    write(sw.data(), sw.size());
+    return *this;
+  }
+
+  Connection& operator<<(const char* s) {
+    return operator<<(std::string_view{s});
+  }
+
+  Connection& operator<<(char c) {
+    write(&c, 1);
     return *this;
   }
 };
