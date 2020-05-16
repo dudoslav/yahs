@@ -1,16 +1,23 @@
 #include <iostream>
-#include "http.hpp"
+#include <http.hpp>
 
 int main() {
-  auto index = http::get("/", [](const auto& req, auto& res){
-      res.ok("Index");
+  auto index = http::get("/", [](const auto& m, const auto& req, auto& conn){
+      std::cout << req.path() << std::endl;
+      conn << "HTTP/1.1 200 OK\n\n";
       });
 
-  auto about = http::get("/about", [](const auto& req, auto& res){
-      res.ok("About");
+  auto about = http::get("/about", [](const auto& m, const auto& req, auto& conn){
+      std::cout << req.path() << std::endl;
+      conn << "HTTP/1.1 200 OK\n\n";
       });
 
-  auto server = http::make_server(8080, index, about);
+  auto other = http::get("/[a-z]+/?", [](const auto& m, const auto& req, auto& conn){
+      std::cout << req.path() << std::endl;
+      conn << "HTTP/1.1 200 OK\n\n";
+      });
+
+  auto server = http::make_server(8080, index, about, other);
   server.listen();
 
   return 0;
