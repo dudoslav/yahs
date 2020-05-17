@@ -1,14 +1,16 @@
 #pragma once
 
 #include <csignal>
+#include <stdexcept>
+#include <string>
 
 namespace tools {
 
 class SignalGuard {
   const int _sig;
 
-  static void handle(int _) {
-    throw std::exception{};
+  static void handle(int sig) {
+    throw std::runtime_error{std::to_string(sig)};
   }
 
 public:

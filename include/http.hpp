@@ -11,11 +11,18 @@
 namespace http {
 
 enum class Method { GET, POST }; // TODO: Fill
+enum class Version { V11 };
 
 std::string_view to_string(Method method) {
   switch (method) {
     case Method::GET: return "GET";
     case Method::POST: return "POST";
+  }
+}
+
+std::string_view to_string(Version version) {
+  switch (version) {
+    case Version::V11: return "HTTP/1.1";
   }
 }
 
@@ -25,19 +32,31 @@ Method get_method(const std::string_view& method) {
   throw std::invalid_argument{"Unknown method"};
 }
 
+/* HTTP ENDL */
+static constexpr auto ENDL = "\r\n";
+class Endl {};
+auto endl() {
+  return Endl{};
+}
+
+net::Connection& operator<<(net::Connection& conn, Endl _) {
+  conn << ENDL;
+  return conn;
+}
+
 // Rework as immutable class with factories
 class Request {
+  using Headers = std::unordered_map<std::string_view, std::string_view>;
   const std::string _data;
   Method _method;
   std::string_view _path;
-  // TODO: headers as unordered_map
+  Headers _headers;
+  std::string_view _body;
 
   public:
 
   template<typename T>
-  Request(T&& data) : _data(std::forward<T>(data)) {
-    parse();
-  }
+  Request(T&& data) : _data(std::forward<T>(data)) { parse(); }
 
   void parse() {
     const char* method;
@@ -45,30 +64,96 @@ class Request {
     const char* path;
     std::size_t path_len;
     int minor_version;
-    phr_header headers[100];
-    std::size_t headers_len;
+    struct phr_header headers[100];
+    std::size_t headers_len = 100;
 
-    phr_parse_request(_data.c_str(), _data.size(),
+    int head = phr_parse_request(_data.c_str(), _data.size(),
         &method, &method_len,
         &path, &path_len,
         &minor_version,
         headers, &headers_len,
         0);
 
+    if (head < 0)
+      throw std::invalid_argument{"Malformed request head"};
+
+    for (int i = 0; i != headers_len; ++i)
+      _headers.emplace(
+          std::string_view{headers[i].name, headers[i].name_len},
+          std::string_view{headers[i].value, headers[i].value_len});
+
     _method = get_method({method, method_len});
     _path = {path, path_len};
+    _body = {_data.data() + head, _data.size() - head};
   }
 
-  auto path() const {
+  auto& path() const {
     return _path;
   }
 
-  auto method() const {
+  auto& method() const {
     return _method;
+  }
+
+  auto& body() const {
+    return _body;
   }
 };
 
-class Response {};
+using Status = std::pair<unsigned, std::string_view>;
+
+Status status_ok() {
+  return {200, "OK"};
+}
+
+Status status_not_found() {
+  return {404, "Not Found"};
+}
+
+class Response {
+  using Headers = std::unordered_map<std::string, std::string>;
+
+  Version _version;
+  Status _status;
+  Headers _headers;
+public:
+  Response(Version version, Status status):
+    _version(version), _status(status) {}
+
+  auto& version() const {
+    return _version;
+  }
+
+  auto& status() const {
+    return _status;
+  }
+
+  template<typename T, typename U>
+  void set_header(T&& k, U&& v) {
+    _headers.emplace(std::forward<T>(k), std::forward<U>(v));
+  }
+
+  friend net::Connection& operator<<(net::Connection& conn, const Response& res) {
+    auto status = res._status;
+    conn << to_string(res._version)
+      << ' ' << std::to_string(status.first)
+      << ' ' << status.second << endl();
+
+    for (const auto& h: res._headers)
+      conn << h.first << ": " << h.second << endl();
+
+    conn << endl();
+    return conn;
+  }
+};
+
+auto response_ok() {
+  return Response{Version::V11, status_ok()};
+}
+
+auto response_not_found() {
+  return Response{Version::V11, status_not_found()};
+}
 
 template<typename T>
 using Matcher = std::tuple<Method, std::regex, T>;
@@ -101,8 +186,9 @@ class Server {
 
   void handle(net::Connection&& conn) {
     auto data = std::string{};
-    while (net::getline(conn, data))
+    while (net::getline(conn, data, '\n'))
       data.push_back('\n');
+    data.push_back('\n');
     auto req = Request(std::move(data));
 
     auto matched = std::apply([&](const auto&... matchers){
@@ -111,8 +197,7 @@ class Server {
 
     if (matched) return;
 
-    // TODO: Refactor
-    conn << "HTTP/1.1 404 Not Found\n\n";
+    conn << response_not_found();
   }
 
   Server(short port, MatchersType matchers):
@@ -145,6 +230,11 @@ auto make_matcher(Method method, const std::string& path, Fun&& fun) {
 template<typename Fun>
 auto get(const std::string& path, Fun&& fun) {
   return make_matcher(Method::GET, path, std::forward<Fun>(fun));
+}
+
+template<typename Fun>
+auto post(const std::string& path, Fun&& fun) {
+  return make_matcher(Method::POST, path, std::forward<Fun>(fun));
 }
 
 } // namespace http
