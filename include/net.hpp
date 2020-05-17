@@ -81,19 +81,6 @@ class Connection {
     return *this;
   }
 
-  static constexpr auto BUFFER_SIZE = 1024;
-
-  // TODO: Implement
-  //std::string read_all() {
-    //auto result = std::string{};
-    //auto buffer = std::array<char, BUFFER_SIZE>{};
-
-    //while (::read(_socket, &buffer, BUFFER_SIZE) > 0) {
-    //}
-
-    //return result;
-  //}
-
   Connection& get(char& c) {
     read(&c, 1);
     return *this;

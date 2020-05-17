@@ -2,7 +2,6 @@
 #include <fstream>
 #include <filesystem>
 #include <http.hpp>
-#include <tools.hpp>
 
 int main() {
   auto index = http::get("/", [](const auto& m, const auto& req, auto& conn){
@@ -24,12 +23,11 @@ int main() {
 
       auto line = std::string{};
       while (std::getline(file, line))
-        conn << line << '\n';
-      conn << '\n';
+        conn << line << http::endl;
+      conn << http::endl;
       });
 
   try {
-    auto ig = tools::make_interrupt_guard();
     auto server = http::make_server(8080, index, about, other);
     server.listen();
   } catch (std::exception& e) {

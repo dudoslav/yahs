@@ -35,9 +35,7 @@ Method get_method(const std::string_view& method) {
 /* HTTP ENDL */
 static constexpr auto ENDL = "\r\n";
 class Endl {};
-auto endl() {
-  return Endl{};
-}
+constexpr auto endl = Endl{};
 
 net::Connection& operator<<(net::Connection& conn, Endl _) {
   conn << ENDL;
@@ -137,12 +135,12 @@ public:
     auto status = res._status;
     conn << to_string(res._version)
       << ' ' << std::to_string(status.first)
-      << ' ' << status.second << endl();
+      << ' ' << status.second << endl;
 
     for (const auto& h: res._headers)
-      conn << h.first << ": " << h.second << endl();
+      conn << h.first << ": " << h.second << endl;
 
-    conn << endl();
+    conn << endl;
     return conn;
   }
 };
