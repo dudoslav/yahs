@@ -73,7 +73,7 @@ class Request {
         0);
 
     if (head < 0)
-      throw std::invalid_argument{"Malformed request head"};
+      throw std::invalid_argument{"Malformed request head: " + _data};
 
     for (int i = 0; i != headers_len; ++i)
       _headers.emplace(

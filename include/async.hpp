@@ -53,13 +53,12 @@ public:
   template<typename Fun>
   Pool(Fun&& fun, std::size_t threads = 4) {
     auto worker = [&](){
-      auto ul = std::unique_lock{_mutex};
-      while (true) {
-        if (_jobs.empty())
-          _cv.wait(ul, [&](){ return !_jobs.empty() || _finished; });
-        if (_finished) break;
-        std::apply(fun, _jobs.pop());
-      }
+      do {
+        auto ul = std::unique_lock{_mutex};
+        _cv.wait(ul, [&](){ return !_jobs.empty() || _finished; });
+        if (!_jobs.empty())
+          std::apply(fun, _jobs.pop());
+      } while (!_finished);
     };
 
     for (std::size_t i = 0; i < threads; ++i)
