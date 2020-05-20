@@ -10,6 +10,8 @@
 #include <netinet/in.h>
 #include <unistd.h>
 
+#include <async.hpp>
+
 namespace net {
 
 class Socket {
@@ -176,15 +178,16 @@ class Server {
 
   ~Server() { shutdown(_socket, SHUT_RDWR); }
 
-  template<typename... Args>
-  void listen(Args... args) {
+  template<typename Fun, typename... Args>
+  void listen(Fun&& fun, Args&&... args) {
     struct sockaddr_in caddr;
     socklen_t caddr_len = sizeof(caddr);
 
     ::listen(_socket, SOMAXCONN);
 
+    auto pool = async::Pool<net::Connection, Args...>{std::forward<Fun>(fun)};
     for (;;) {
-      std::thread(args...,
+      std::thread(fun, args...,
           Connection{accept(_socket,
               reinterpret_cast<struct sockaddr*>(&caddr),
               &caddr_len)}).detach();

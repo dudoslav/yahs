@@ -11,6 +11,11 @@ find_package(Threads REQUIRED)
 
 add_subdirectory(deps)
 
-add_executable(server main.cpp)
-target_link_libraries(server PUBLIC Threads::Threads picohttpparser)
-target_include_directories(server PUBLIC include picohttpparser)
+add_library(yahs INTERFACE)
+target_include_directories(yahs INTERFACE include)
+target_link_libraries(yahs INTERFACE Threads::Threads picohttpparser)
+
+# add_executable(server main.cpp)
+# target_link_libraries(server PUBLIC yahs)
+
+add_subdirectory(test)

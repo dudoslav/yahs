@@ -156,13 +156,14 @@ auto response_not_found() {
 template<typename T>
 using Matcher = std::tuple<Method, std::regex, T>;
 
-template<typename T>
-class Server {
-  using AddressType = net::SocketAddressIPv4;
-  using MatchersType = T;
+template<typename... Matchers>
+class Application {
+  std::tuple<Matchers...> _matchers;
 
-  net::Server<AddressType> _server;
-  MatchersType _matchers;
+public:
+
+  Application(Matchers... matchers):
+    _matchers(std::forward<Matchers>(matchers)...) {}
 
   template<typename M>
   bool match(const M& matcher, const Request& req, net::Connection& conn) {
@@ -182,7 +183,7 @@ class Server {
     return true;
   }
 
-  void handle(net::Connection&& conn) {
+  void operator()(net::Connection&& conn) {
     auto data = std::string{};
     while (net::getline(conn, data, '\n'))
       data.push_back('\n');
@@ -195,30 +196,10 @@ class Server {
 
     if (matched) return;
 
+    // TODO: Allow change
     conn << response_not_found();
   }
-
-  Server(short port, MatchersType matchers):
-    _server(net::make_tcp_server(port)),
-    _matchers(matchers) {}
-
-  public:
-
-  template<typename... Args>
-  Server(short port, Args... args):
-    Server(port, std::tuple<Args...>(args...)) {}
-
-
-  void listen() {
-    _server.listen(&Server::handle, this);
-  }
 };
-
-template<typename... Args>
-auto make_server(short port, Args... args) {
-  using MatchersType = std::tuple<Args...>;
-  return Server<MatchersType>{port, std::forward<Args>(args)...};
-}
 
 template<typename Fun>
 auto make_matcher(Method method, const std::string& path, Fun&& fun) {
