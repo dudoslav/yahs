@@ -51,7 +51,8 @@ class Pool {
 public:
 
   template<typename Fun>
-  Pool(Fun&& fun, std::size_t threads = 4) {
+  Pool(Fun&& fun, std::size_t threads = std::thread::hardware_concurrency()):
+    _workers(threads) {
     auto worker = [&](){
       do {
         auto ul = std::unique_lock{_mutex};
@@ -64,8 +65,8 @@ public:
       } while (!_finished);
     };
 
-    for (std::size_t i = 0; i < threads; ++i)
-      _workers.emplace_back(worker);
+    for (auto& w: _workers)
+      w = std::thread{worker};
   }
 
   ~Pool() {

@@ -76,11 +76,13 @@ class Connection {
 
   /* Input */
   Connection& read(char* s, std::size_t count) {
-    // if (!*this)
-    //   *s = eof();
-    if (::read(_socket, s, count) == -1)
-      throw std::system_error{errno, std::system_category()};
-    return *this;
+    if (::recv(_socket, s, count, 0) != -1)
+      return *this;
+
+    if (errno == EAGAIN || errno == EINTR)
+      return read(s, count);
+
+    throw std::system_error{errno, std::system_category()};
   }
 
   Connection& get(char& c) {
@@ -104,7 +106,7 @@ class Connection {
 
   Connection& write(const char* s, std::size_t count) {
     // TODO: If wrote less than count write rest
-    if (::write(_socket, s, count) == -1)
+    if (::send(_socket, s, count, MSG_NOSIGNAL) == -1)
       throw std::system_error{errno, std::system_category()};
     return *this;
   }

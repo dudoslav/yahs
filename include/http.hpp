@@ -188,16 +188,20 @@ public:
     while (net::getline(conn, data, '\n'))
       data.push_back('\n');
     data.push_back('\n');
-    auto req = Request(std::move(data));
+    try {
+      auto req = Request(std::move(data));
 
-    auto matched = std::apply([&](const auto&... matchers){
-        return (match(matchers, req, conn) || ...);
-        }, _matchers);
+      auto matched = std::apply([&](const auto&... matchers){
+          return (match(matchers, req, conn) || ...);
+          }, _matchers);
 
-    if (matched) return;
+      if (matched) return;
 
-    // TODO: Allow change
-    conn << response_not_found();
+      // TODO: Allow change
+      conn << response_not_found();
+    } catch (std::invalid_argument e) {
+      std::cerr << e.what() << std::endl;
+    }
   }
 };
 
