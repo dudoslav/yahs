@@ -2,51 +2,46 @@ cmake_minimum_required(VERSION 3.12)
 
 project(YAHS VERSION 0.1.0)
 
-include(GNUInstallDirs)
-
 find_package(Threads REQUIRED)
 add_subdirectory(deps)
 
-add_library(yahs INTERFACE)
-target_link_libraries(yahs INTERFACE Threads::Threads picohttpparser)
-target_include_directories(yahs INTERFACE
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>  
-  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+add_library(YAHS INTERFACE)
+target_link_libraries(YAHS INTERFACE Threads::Threads picohttpparser)
+target_include_directories(YAHS INTERFACE
+  $<BUILD_INTERFACE:${YAHS_SOURCE_DIR}/include>  
+  $<INSTALL_INTERFACE:include>
+)
 
-target_compile_features(yahs INTERFACE cxx_std_17)
+target_compile_features(YAHS INTERFACE cxx_std_17)
 
 # Test
 enable_testing()
 add_subdirectory(test)
 
 # Install
-install(TARGETS yahs
-  EXPORT YAHS
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(TARGETS YAHS
+  EXPORT YAHSTargets
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  INCLUDES DESTINATION include
+)
+
+install(EXPORT YAHSTargets
+  FILE YAHSTargets.cmake
+  NAMESPACE YAHS::
+  DESTINATION lib/cmake/YAHS
+)
 
 include(CMakePackageConfigHelpers)
 write_basic_package_version_file("YAHSConfigVersion.cmake"
   VERSION ${PROJECT_VERSION}
-  COMPATIBILITY SameMajorVersion)
+  COMPATIBILITY SameMajorVersion
+)
 
-configure_package_config_file(
-  "${PROJECT_SOURCE_DIR}/cmake/YAHSConfig.cmake.in"
-  "${PROJECT_BINARY_DIR}/YAHSConfig.cmake"
-  INSTALL_DESTINATION
-  ${CMAKE_INSTALL_DATAROOTDIR}/YAHS/cmake)
+install(FILES "YAHSConfig.cmake" "${CMAKE_BINARY_DIR}/YAHSConfigVersion.cmake"
+  DESTINATION lib/cmake/YAHS
+)
 
-install(EXPORT YAHS
-  FILE YAHSTargets.cmake
-  NAMESPACE YAHS::
-  DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/YAHS/cmake)
-
-install(FILES "${PROJECT_BINARY_DIR}/YAHSConfig.cmake"
-  "${PROJECT_BINARY_DIR}/YAHSConfigVersion.cmake"
-  DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/YAHS/cmake)
-
-file(GLOB HEADER_FILES "include/*.hpp")
-install(DIRECTORY ${PROJECT_SOURCE_DIR}/include/ DESTINATION include
+install(DIRECTORY include/ DESTINATION include/yahs
   FILES_MATCHING PATTERN "*.hpp"
-  )
+)

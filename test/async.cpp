@@ -22,7 +22,7 @@ int main() {
   std::cout << queue.size() << std::endl;
 
   auto worker = [](auto ui){
-    std::cout << *ui << std::endl;
+    std::cout << std::this_thread::get_id() << " " << *ui << std::endl;
   };
   auto pool = async::Pool<std::unique_ptr<int>>{worker};
   for (int i = 0; i < 1000; ++i)

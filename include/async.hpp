@@ -56,8 +56,11 @@ public:
       do {
         auto ul = std::unique_lock{_mutex};
         _cv.wait(ul, [&](){ return !_jobs.empty() || _finished; });
-        if (!_jobs.empty())
-          std::apply(fun, _jobs.pop());
+        if (_jobs.empty()) continue;
+
+        auto job = _jobs.pop();
+        ul.unlock();
+        std::apply(fun, std::move(job));
       } while (!_finished);
     };
 

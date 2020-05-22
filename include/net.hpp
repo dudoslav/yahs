@@ -187,10 +187,9 @@ class Server {
 
     auto pool = async::Pool<net::Connection, Args...>{std::forward<Fun>(fun)};
     for (;;) {
-      std::thread(fun, args...,
-          Connection{accept(_socket,
+      pool.run(args..., Connection{accept(_socket,
               reinterpret_cast<struct sockaddr*>(&caddr),
-              &caddr_len)}).detach();
+              &caddr_len)});
     }
   }
 };
